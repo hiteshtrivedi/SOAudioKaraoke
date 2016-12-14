@@ -9,13 +9,23 @@
 import UIKit
 import AVFoundation
 
-class ViewController: UIViewController, AVAudioPlayerDelegate {
+class ViewController: UIViewController, AVAudioPlayerDelegate, AVAudioRecorderDelegate {
 
     @IBOutlet weak var btnPlay: UIButton!
     @IBOutlet weak var btnPrevious: UIButton!
     @IBOutlet weak var btnStop: UIButton!
     @IBOutlet weak var btnNext: UIButton!
     @IBOutlet weak var slider: UISlider!
+    @IBOutlet weak var btnRecord: UIButton!
+    
+    var audioRecorder:AVAudioRecorder!
+    
+    //Setting for recorder
+    let recordSettings = [AVEncoderAudioQualityKey: AVAudioQuality.Min.rawValue,
+                          AVEncoderBitRateKey: 16,
+                          AVNumberOfChannelsKey : 2,
+                          AVSampleRateKey: 44100.0]
+    
     
     var audioPlayer:AVAudioPlayer!
     var currentTrack = 0
@@ -27,11 +37,46 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
         UIApplication.sharedApplication().statusBarHidden=true; 
-        btnStop.hidden = true
+        btnStop.enabled = false
+        
+        self.prepareRecorder()
         self.initilizePlayer()
     }
     
-    //MARK: Audio player initilizer
+    func prepareRecorder() {
+        // getting URL path for audio
+        let dirPath = NSSearchPathForDirectoriesInDomains(.DocumentDirectory, .UserDomainMask, true)
+        let docDir = dirPath[0]
+        let soundFilePath = (docDir as NSString).stringByAppendingPathComponent("sound.caf")
+        let soundFileURL = NSURL(fileURLWithPath: soundFilePath)
+        print(soundFilePath)
+        
+
+        var error : NSError?
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(AVAudioSessionCategoryPlayAndRecord)
+        } catch let error1 as NSError {
+            error = error1
+        }
+        if let err = error{
+            print("audioSession error: \(err.localizedDescription)")
+        }
+        do {
+            audioRecorder = try AVAudioRecorder(URL: soundFileURL, settings: recordSettings as! [String : AnyObject])
+        } catch let error1 as NSError {
+            error = error1
+            audioRecorder = nil
+        }
+        
+        if let err = error{
+            print("audioSession error: \(err.localizedDescription)")
+        }else{
+            audioRecorder?.prepareToRecord()
+        }
+    }
+    
+    //MARK: Audio player initilizer with some bundled audio files
     func initilizePlayer() {
         let strTrack = arrTracks[currentTrack] as String
         let audioFilePath = NSBundle.mainBundle().pathForResource(strTrack, ofType: "mp3")
@@ -52,25 +97,63 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
         }
     }
     
+
+    //MARK: Start Recording
+    @IBAction func actionStartRecord(sender: AnyObject) {
+        if !audioRecorder.recording {
+            btnPlay.enabled = false
+            audioPlayer.play()
+            audioRecorder?.record()
+            btnRecord.setTitle("Stop", forState: .Normal)
+        } else {
+            //Stop audio
+            btnPlay.enabled = true
+            self.initilizePlayer()
+            audioRecorder?.stop()
+            btnRecord.setTitle("Record", forState: .Normal)
+        }
+    }
+    
+
+    
     
     //MARK: Start and Pause button action
     @IBAction func actionPlaySound(sender: UIButton) {
-        btnStop.hidden = false
         
-        
-        if audioPlayer.playing == false {
-            //Start Playing audio
-            audioPlayer.play()
-            btnPlay.setTitle("Pause", forState: .Normal)
-            
-            self.startTimer()
-        } else {
-            //Pause Playing audio
-            audioPlayer.pause()
-            btnPlay.setTitle("Play", forState: .Normal)
-            self.stopTimer()
+        if audioRecorder?.recording == false {
+            if audioPlayer.playing == false {
+                
+                var error : NSError?
+                
+                do {
+                    audioPlayer = try AVAudioPlayer(contentsOfURL: (audioRecorder?.url)!)
+                } catch let error1 as NSError {
+                    error = error1
+                    audioPlayer = nil
+                }
+                
+                audioPlayer?.delegate = self
+                
+                if let err = error{
+                    print("audioPlayer error: \(err.localizedDescription)")
+                }else{
+                    audioPlayer?.play()
+                }
+                
+                btnPlay.setTitle("Pause", forState: .Normal)
+                btnRecord.enabled = false
+                self.startTimer()
+            } else {
+                audioPlayer.pause()
+                btnPlay.setTitle("Play", forState: .Normal)
+                btnRecord.enabled = true
+                self.stopTimer()
+            }
         }
+        
+        btnStop.enabled = true
     }
+
     
 
     //MARK: Update slider
@@ -124,8 +207,9 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
             audioPlayer?.currentTime = 0
             self.stopTimer()
         }
+        btnRecord.enabled = true
         btnPlay.setTitle("Play", forState: .Normal)
-        btnStop.hidden = false
+        btnStop.enabled = false
         slider.value = 0.0
     }
     
@@ -134,8 +218,26 @@ class ViewController: UIViewController, AVAudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(player: AVAudioPlayer, successfully flag: Bool){
         if flag == true {
             //can perform next action
-            self.playNextTrack()
+            //self.playNextTrack()
+            self.initilizePlayer()
+            btnPlay.setTitle("Play", forState: .Normal)
+            btnRecord.enabled = true
+            btnStop.enabled = false
         }
+    }
+    
+    func audioPlayerDecodeErrorDidOccur(player: AVAudioPlayer, error: NSError?) {
+        btnPlay.enabled = true
+        print("Audio Play Decode Error")
+    }
+    
+    func audioRecorderDidFinishRecording(recorder: AVAudioRecorder, successfully flag: Bool) {
+        btnPlay.enabled = true
+        print("audio Recorder Did Finish Recording")
+    }
+    
+    func audioRecorderEncodeErrorDidOccur(recorder: AVAudioRecorder, error: NSError?) {
+        print("Audio Record Encode Error")
     }
     
     
